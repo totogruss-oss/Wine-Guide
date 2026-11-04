@@ -1,7 +1,0 @@
-{
-  "name": "Wein Guide",
-  "description": "",
-  "requestFramePermissions": [
-    "microphone"
-  ]
-}

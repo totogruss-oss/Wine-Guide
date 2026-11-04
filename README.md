@@ -1,20 +1,40 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 🍷 Wein-Guide von Kirsten & Torsten
 
-# Run and deploy your AI Studio app
+Unser persönliches Weintagebuch: Weine unterwegs oder zu Hause festhalten, gemeinsam bewerten und später wiederfinden („Welcher Chardonnay war das nochmal?“).
 
-This contains everything you need to run your app locally.
+**App:** https://totogruss-oss.github.io/Wine-Guide/
 
-View your app in AI Studio: https://ai.studio/apps/5d43a5eb-1639-4909-8917-9b9222efb384
+## Auf dem Handy installieren
 
-## Run Locally
+Die App ist eine installierbare Web-App (PWA). Sie bekommt ein eigenes Icon und funktioniert auch ohne Internet.
 
-**Prerequisites:**  Node.js
+- **Android (Chrome):** App-Link öffnen → Menü ⋮ → „Zum Startbildschirm hinzufügen“ bzw. „App installieren“
+- **iPhone (Safari):** App-Link öffnen → Teilen-Symbol → „Zum Home-Bildschirm“
 
+## KI-Funktionen
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Diktieren, Keller-Analyse, KI-Sommelier und KI-Bild laufen über **Google Gemini**.
+Jede Person trägt unter *Einstellungen* einmalig einen eigenen Gemini-API-Key ein
+(kostenlos unter https://aistudio.google.com/apikey). Der Key bleibt auf dem Gerät
+und wird nie in den Code oder auf GitHub übertragen.
+
+## Wo liegen die Daten?
+
+**Stand Stufe 1:** lokal im Browser des jeweiligen Geräts (IndexedDB).
+Bitte regelmäßig unter *Einstellungen → Exportieren (JSON)* sichern.
+**Stufe 2:** gemeinsame Datenbank über Supabase, siehe [docs/supabase-einrichtung.md](docs/supabase-einrichtung.md).
+
+## Veröffentlichung
+
+Jeder Push auf `main` baut die App und veröffentlicht sie über GitHub Pages
+(`.github/workflows/deploy-pages.yml`). Einmalig nötig: im Repository unter
+*Settings → Pages → Source* „**GitHub Actions**“ auswählen.
+
+## Lokal entwickeln
+
+```bash
+npm install
+npm run dev
+```
+
+Prüfen und bauen: `npm run lint` und `npm run build`.

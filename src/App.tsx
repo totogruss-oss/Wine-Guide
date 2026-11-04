@@ -4,10 +4,10 @@
  */
 
 import React, { useEffect, Component, ErrorInfo, ReactNode, useState } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Home, PlusCircle, Sparkles, Settings as SettingsIcon, AlertTriangle, Search, Book, Wine, Lock, Star, MoreHorizontal, Clock, Share, Info, X } from 'lucide-react';
+import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Home, PlusCircle, Sparkles, Settings as SettingsIcon, AlertTriangle, Search, Book, Wine, Lock, Star, MoreHorizontal, Clock, Share, X } from 'lucide-react';
 import { cn } from './lib/utils';
-import { db, populateMockData } from './db';
+import { db, seedInitialWines } from './db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import WineList from './pages/WineList';
 import WineForm from './pages/WineForm';
@@ -64,7 +64,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
 function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const [showImpressum, setShowImpressum] = useState(false);
   const [showLegal, setShowLegal] = useState(false);
   
   const recentWines = useLiveQuery(() => db.wines.orderBy('id').reverse().limit(4).toArray());
@@ -103,13 +102,13 @@ function Layout({ children }: { children: React.ReactNode }) {
         await navigator.share({
           title: 'Wein-Guide von Kirsten & Torsten',
           text: 'Hier ist unser persönlicher Wein-Guide!',
-          url: window.location.href,
+          url: window.location.origin + window.location.pathname,
         });
       } catch (err) {
         console.error('Share failed:', err);
       }
     } else {
-      window.location.href = `mailto:?subject=Wein-Guide&body=${encodeURIComponent(window.location.href)}`;
+      window.location.href = `mailto:?subject=Wein-Guide&body=${encodeURIComponent(window.location.origin + window.location.pathname)}`;
     }
   };
   
@@ -201,20 +200,21 @@ function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Cover Image & Title Area */}
         <div className="w-full relative">
-          <div className="h-48 md:h-64 w-full bg-gray-200 overflow-hidden relative">
+          <div className="h-24 md:h-64 w-full bg-gradient-to-br from-red-900 via-red-800 to-rose-700 overflow-hidden relative">
             <img 
               src="https://images.unsplash.com/photo-1584916201218-f4242ceb4809?q=80&w=2000&auto=format&fit=crop" 
               alt="Wine Cellar Cover" 
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
             />
           </div>
           <div className="max-w-5xl mx-auto px-4 md:px-8 relative">
-            <div className="absolute -top-12 md:-top-16 left-4 md:left-8 text-6xl md:text-7xl bg-white rounded-full p-2 shadow-sm">
+            <div className="absolute -top-8 md:-top-16 left-4 md:left-8 text-4xl md:text-7xl bg-white rounded-full p-2 shadow-sm">
               🍷
             </div>
-            <div className="pt-12 md:pt-16 pb-8">
-              <h1 className="text-4xl md:text-5xl font-bold text-[#37352f] tracking-tight">
+            <div className="pt-10 md:pt-16 pb-4 md:pb-8">
+              <h1 className="text-2xl md:text-5xl font-bold text-[#37352f] tracking-tight">
                 Wein-Guide von Kirsten & Torsten
               </h1>
             </div>
@@ -228,35 +228,16 @@ function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Mobile Footer (inline at bottom of content) */}
         <footer className="md:hidden w-full border-t border-[#e9e9e7] bg-[#f7f7f5] mt-auto py-4 flex justify-center gap-6 text-xs text-[#787774] pb-20">
-          <button onClick={() => setShowImpressum(true)} className="hover:text-[#37352f] transition-colors">Impressum</button>
           <button onClick={() => setShowLegal(true)} className="hover:text-[#37352f] transition-colors">Rechtlicher Hinweis</button>
         </footer>
       </main>
 
       {/* Desktop Footer (fixed full width) */}
       <footer className="hidden md:flex fixed bottom-0 left-0 right-0 h-10 bg-[#f7f7f5] border-t border-[#e9e9e7] z-50 items-center justify-center gap-8 text-xs text-[#787774]">
-        <button onClick={() => setShowImpressum(true)} className="hover:text-[#37352f] transition-colors">Impressum</button>
         <button onClick={() => setShowLegal(true)} className="hover:text-[#37352f] transition-colors">Rechtlicher Hinweis</button>
       </footer>
 
       {/* Modals */}
-      {showImpressum && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={() => setShowImpressum(false)}>
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold flex items-center gap-2"><Info className="w-5 h-5" /> Impressum</h2>
-              <button onClick={() => setShowImpressum(false)} className="p-1 hover:bg-gray-100 rounded-md"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="text-sm text-[#37352f] space-y-1">
-              <p className="font-medium">Angaben gemäß § 5 TMG:</p>
-              <p>Torsten Gruß</p>
-              <p className="pt-2 font-medium">Kontakt:</p>
-              <p>E-Mail: <a href="mailto:toto.gruss@googlemail.com" className="text-blue-600 hover:underline">toto.gruss@googlemail.com</a></p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showLegal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={() => setShowLegal(false)}>
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
@@ -277,7 +258,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#ffffff] border-t border-[#e9e9e7] flex justify-around items-center h-16 px-4 z-50">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[#ffffff] border-t border-[#e9e9e7] flex justify-around items-center h-16 px-4 z-50 box-content pb-[env(safe-area-inset-bottom)]">
         <Link to="/" className={cn("flex flex-col items-center justify-center w-full h-full gap-1", location.pathname === '/' ? "text-[#37352f]" : "text-[#787774]")}>
           <Home className="w-5 h-5" />
           <span className="text-[10px] font-medium">Home</span>
@@ -301,11 +282,13 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   useEffect(() => {
-    populateMockData();
+    seedInitialWines();
+    // Browser bitten, die lokale Datenbank nicht automatisch zu löschen
+    navigator.storage?.persist?.().catch(() => {});
   }, []);
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <ErrorBoundary>
         <Layout>
           <Routes>
@@ -317,6 +300,6 @@ export default function App() {
           </Routes>
         </Layout>
       </ErrorBoundary>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

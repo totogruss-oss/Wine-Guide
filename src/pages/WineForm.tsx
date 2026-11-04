@@ -7,7 +7,8 @@ import { PREDEFINED_REBSORTEN, PREDEFINED_ANBAUGEBIETE, PREDEFINED_LAENDER, PRED
 import { AutocompleteInput } from '../components/AutocompleteInput';
 import { Tooltip } from '../components/Tooltip';
 import { RebsorteIcon } from '../components/RebsorteIcon';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import { getGemini, MODELS, MissingApiKeyError } from '../lib/ai';
 
 const GESCHMACKSNOTEN = ['Trocken', 'Halbtrocken', 'Feinherb', 'Lieblich', 'Süß'];
 const FARBEN = ['Weiß', 'Rot', 'Rosé', 'Orange'];
@@ -36,13 +37,7 @@ export default function WineForm() {
     e.stopPropagation();
     setIsGeneratingImage(true);
     try {
-      const apiKey = localStorage.getItem('openai_api_key') || process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        alert('Bitte API Key in den Einstellungen hinterlegen.');
-        setIsGeneratingImage(false);
-        return;
-      }
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = getGemini();
       
       const promptParts = ['A professional, elegant product photography shot of a single wine bottle standing upright against a clean light background.'];
       if (wine.farbe) promptParts.push(`It is a ${wine.farbe} wine.`);
@@ -51,7 +46,7 @@ export default function WineForm() {
       promptParts.push('High quality, photorealistic, cinematic studio lighting.');
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview', 
+        model: MODELS.image,
         contents: {
           parts: [{ text: promptParts.join(' ') }]
         },
@@ -227,9 +222,9 @@ export default function WineForm() {
           const mimeType = audioBlob.type || 'audio/webm';
 
           try {
-            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+            const ai = getGemini();
             const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
+              model: MODELS.text,
               contents: {
                 parts: [
                   {
@@ -306,7 +301,9 @@ Mögliche Felder (alle optional):
             }
           } catch (error) {
             console.error('Error processing voice input:', error);
-            setVoiceError('Fehler bei der Verarbeitung der Spracheingabe. Bitte versuche es erneut.');
+            setVoiceError(error instanceof MissingApiKeyError
+              ? error.message
+              : 'Fehler bei der Verarbeitung der Spracheingabe. Bitte versuche es erneut.');
           } finally {
             setIsProcessingVoice(false);
             stream.getTracks().forEach(track => track.stop());

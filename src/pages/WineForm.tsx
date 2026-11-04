@@ -9,6 +9,8 @@ import { Tooltip } from '../components/Tooltip';
 import { RebsorteIcon } from '../components/RebsorteIcon';
 import { Type } from '@google/genai';
 import { getGemini, MODELS, MissingApiKeyError } from '../lib/ai';
+import { saveWine as persistWine, deleteWine as removeWine } from '../lib/wineRepo';
+import { compressImage } from '../lib/image';
 
 const GESCHMACKSNOTEN = ['Trocken', 'Halbtrocken', 'Feinherb', 'Lieblich', 'Süß'];
 const FARBEN = ['Weiß', 'Rot', 'Rosé', 'Orange'];
@@ -66,6 +68,7 @@ export default function WineForm() {
       }
       
       if (imageUrl) {
+         imageUrl = await compressImage(imageUrl);
          setWine(prev => ({ ...prev, image: imageUrl }));
          setImagePreview(imageUrl);
       } else {
@@ -324,22 +327,13 @@ Mögliche Felder (alle optional):
       return;
     }
 
-    const wineToSave = {
-      ...wine,
-      createdAt: wine.createdAt || Date.now(),
-    } as Wine;
-
-    if (id) {
-      await db.wines.put(wineToSave);
-    } else {
-      await db.wines.add(wineToSave);
-    }
+    await persistWine(wine);
     navigate('/');
   };
 
   const deleteWine = async () => {
     if (id && window.confirm('Wein wirklich löschen?')) {
-      await db.wines.delete(Number(id));
+      await removeWine(Number(id));
       navigate('/');
     }
   };

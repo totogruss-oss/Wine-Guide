@@ -20,9 +20,13 @@ und wird nie in den Code oder auf GitHub übertragen.
 
 ## Wo liegen die Daten?
 
-**Stand Stufe 1:** lokal im Browser des jeweiligen Geräts (IndexedDB).
-Bitte regelmäßig unter *Einstellungen → Exportieren (JSON)* sichern.
-**Stufe 2:** gemeinsame Datenbank über Supabase, siehe [docs/supabase-einrichtung.md](docs/supabase-einrichtung.md).
+**Offline zuerst:** Jeder Wein wird sofort auf dem Handy gespeichert (IndexedDB) und im
+Hintergrund mit der gemeinsamen Datenbank (**Supabase**, Frankfurt) abgeglichen, sobald Netz da ist.
+Oben rechts zeigt die App den Stand: *Gesichert*, *x offen*, *Offline* oder *Anmelden*.
+
+- Einrichtung: [docs/supabase-einrichtung.md](docs/supabase-einrichtung.md)
+- Datenbank-Schema und Zugriffsregeln: [supabase/schema.sql](supabase/schema.sql)
+- Zusätzlich ab und zu unter *Einstellungen → Exportieren (JSON)* sichern.
 
 ## Veröffentlichung
 

@@ -24,10 +24,23 @@ export interface Wine {
   kommentarKirsten?: string;
   kommentarTorsten?: string;
   createdAt: number;
+  // --- Synchronisation (Stufe 2) ---
+  /** Geräteübergreifende ID, identisch mit der ID in Supabase */
+  uuid?: string;
+  /** Zeitpunkt der letzten lokalen Änderung (ms) */
+  updatedAt?: number;
+  /** 1 = lokale Änderung noch nicht hochgeladen */
+  dirty?: 0 | 1;
+}
+
+/** Lokal gelöschte Weine, deren Löschung noch hochgeladen werden muss */
+export interface PendingDelete {
+  uuid: string;
 }
 
 const db = new Dexie('WineGuideDB') as Dexie & {
   wines: EntityTable<Wine, 'id'>;
+  pendingDeletes: EntityTable<PendingDelete, 'uuid'>;
 };
 
 db.version(1).stores({
@@ -42,75 +55,16 @@ db.version(3).stores({
   wines: '++id, name, farbe, land, anbaugebiet, rebsorte, winzer, noteKirsten, noteTorsten, createdAt'
 });
 
-/** Legt beim allerersten Start eure ersten drei echten Weine an. */
-export async function seedInitialWines() {
-  const SEED_FLAG = 'wine_guide_seeded';
-  try {
-    if (localStorage.getItem(SEED_FLAG)) return;
-    localStorage.setItem(SEED_FLAG, '1');
-  } catch {
-    /* ohne Speicher: nur auf leere Datenbank prüfen */
-  }
-  const count = await db.wines.count();
-  if (count === 0) {
-    await db.wines.bulkAdd([
-      {
-        name: 'Mezzacorona',
-        farbe: 'Weiß',
-        geschmacksnote: 'Trocken',
-        land: 'Italien',
-        anbaugebiet: 'Trentino',
-        jahrgang: 2020,
-        rebsorte: 'Pinot Grigio',
-        kaufort: 'Edeka - Wucherpfennig',
-        kaufdatum: '2021-09-08',
-        preis: 4.99,
-        besonderheiten: 'Nachhaltige Qualität',
-        noteKirsten: 2,
-        noteTorsten: 2,
-        createdAt: Date.now() - 10000,
-      },
-      {
-        name: 'Oveja Blanca',
-        farbe: 'Weiß',
-        geschmacksnote: 'Trocken',
-        land: 'Spanien',
-        anbaugebiet: 'Moscatel',
-        jahrgang: 2020,
-        rebsorte: 'Muscat',
-        kaufort: 'EDEKA',
-        kaufdatum: '2021-08-14',
-        preis: 5.99,
-        besonderheiten: 'Trockener Muskat-Wein; Vegan und Bio',
-        geruch: ['Blumig', 'Fruchtig'],
-        geschmack: ['Hohe Säure'],
-        noteKirsten: 5,
-        noteTorsten: 4,
-        kommentarKirsten: 'Interessant',
-        kommentarTorsten: 'Eklig. Zu viel Säure; nur ich habe ihn am Ende leer getrunken',
-        createdAt: Date.now() - 5000,
-      },
-      {
-        name: 'Nero D`Avola (Sicilia)',
-        farbe: 'Rot',
-        geschmacksnote: 'Trocken',
-        land: 'Italien',
-        anbaugebiet: 'Sizilien',
-        jahrgang: 2020,
-        rebsorte: 'Nero D`Avola',
-        kaufort: 'Edeka - Wucherpfennig',
-        kaufdatum: '2021-09-04',
-        preis: 5.99,
-        besonderheiten: 'Bio-Wein',
-        geschmack: ['Bitter'],
-        noteKirsten: 3,
-        noteTorsten: 3,
-        kommentarKirsten: 'Leicht bis leicht säuerlich',
-        kommentarTorsten: 'Unangenehm im Nachgang; komisch im Mund',
-        createdAt: Date.now(),
-      }
-    ]);
-  }
-}
+db.version(4).stores({
+  wines: '++id, &uuid, dirty, name, farbe, land, anbaugebiet, rebsorte, winzer, noteKirsten, noteTorsten, createdAt',
+  pendingDeletes: 'uuid',
+}).upgrade(tx =>
+  // Alle vorhandenen Weine bekommen eine feste ID und werden zum Hochladen vorgemerkt
+  tx.table('wines').toCollection().modify((w: Wine) => {
+    if (!w.uuid) w.uuid = crypto.randomUUID();
+    if (!w.updatedAt) w.updatedAt = w.createdAt || Date.now();
+    w.dirty = 1;
+  })
+);
 
 export { db };

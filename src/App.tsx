@@ -7,7 +7,9 @@ import React, { useEffect, Component, ErrorInfo, ReactNode, useState } from 'rea
 import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Home, PlusCircle, Sparkles, Settings as SettingsIcon, AlertTriangle, Search, Book, Wine, Lock, Star, MoreHorizontal, Clock, Share, X } from 'lucide-react';
 import { cn } from './lib/utils';
-import { db, seedInitialWines } from './db';
+import { db } from './db';
+import { startSync } from './lib/sync';
+import { SyncIndicator } from './components/SyncIndicator';
 import { useLiveQuery } from 'dexie-react-hooks';
 import WineList from './pages/WineList';
 import WineForm from './pages/WineForm';
@@ -187,10 +189,11 @@ function Layout({ children }: { children: React.ReactNode }) {
         <div className="h-12 border-b border-[#e9e9e7] flex items-center justify-between px-4 sticky top-0 bg-white z-10">
           <div className="flex items-center gap-2 text-sm text-[#37352f]">
             <Wine className="w-4 h-4 text-red-500" />
-            <span className="font-medium">Wein-Guide von Kirsten & Torsten</span>
+            <span className="font-medium truncate">Wein-Guide<span className="hidden sm:inline"> von Kirsten & Torsten</span></span>
           </div>
           <div className="flex items-center gap-3 text-sm text-[#787774]">
             <span className="hidden sm:inline">{lastEditedText}</span>
+            <SyncIndicator />
             <div onClick={handleShare} className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded cursor-pointer">
               <Share className="w-3 h-3" />
               <span>Teilen</span>
@@ -282,7 +285,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   useEffect(() => {
-    seedInitialWines();
+    startSync();
     // Browser bitten, die lokale Datenbank nicht automatisch zu löschen
     navigator.storage?.persist?.().catch(() => {});
   }, []);

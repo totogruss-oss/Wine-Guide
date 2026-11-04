@@ -1,53 +1,71 @@
-# Stufe 2 vorbereiten: Supabase einrichten
+# Gemeinsame Datenbank einrichten (Supabase)
 
-Supabase ist die gemeinsame Online-Datenbank für Kirsten und Torsten. Der kostenlose Tarif reicht für uns zwei völlig aus.
-Dauer: ca. 15 Minuten. **Du musst nichts programmieren.** Die Tabellen und Regeln liefert Claude in Stufe 2 als fertiges SQL zum Einfügen.
+Supabase ist die gemeinsame Online-Datenbank für den Wein-Guide. Der kostenlose Tarif reicht für zwei Personen völlig aus.
+**Dauer:** ca. 15 Minuten. **Programmieren musst du nichts**, nur klicken und einmal SQL einfügen.
+
+> Die App funktioniert auch ohne diese Einrichtung weiter (dann nur lokal). Du kannst also in Ruhe vorgehen.
 
 ## 1. Konto und Projekt anlegen
 
-1. https://supabase.com aufrufen → **Start your project** → mit dem GitHub-Konto anmelden.
-2. **New project** anlegen:
-   - Name: `wine-guide`
-   - Database Password: über **Generate a password** erzeugen und **in Proton Pass speichern**
-   - Region: **Central EU (Frankfurt)**, damit die Daten in Deutschland liegen
+1. https://supabase.com → **Start your project** → mit dem **GitHub-Konto** anmelden.
+2. **New project**:
+   - **Name:** `wine-guide`
+   - **Database Password:** auf **Generate a password** klicken und **in Proton Pass speichern** (wird im Alltag nicht gebraucht, aber nicht verlieren)
+   - **Region:** **Central EU (Frankfurt)**
    - Plan: **Free**
-3. Ca. 2 Minuten warten, bis das Projekt bereit ist.
+3. **Create new project** und ca. 2 Minuten warten.
 
-> Hinweis: Kostenlose Projekte werden nach **7 Tagen ohne Nutzung** pausiert. Sie lassen sich im Dashboard mit einem Klick wieder starten, die Daten bleiben erhalten.
+## 2. Datenbank-Tabellen anlegen
 
-## 2. Zwei Werte notieren
+1. Links im Menü **SQL Editor** öffnen → **New query**.
+2. Den kompletten Inhalt der Datei [`supabase/schema.sql`](../supabase/schema.sql) hineinkopieren.
+3. **Ganz unten** `DEINE-EMAIL@example.com` durch **deine E-Mail-Adresse** ersetzen (die, mit der du dich in der App anmelden willst).
+4. **Run** klicken. Erwartet: „Success. No rows returned“.
 
-Im Projekt unter **Project Settings → API** (bzw. **API Keys**):
+## 3. Registrierung sperren und dein Konto anlegen
 
-| Wert | Wo | Geheim? |
-|---|---|---|
-| **Project URL** | `https://xxxx.supabase.co` | nein |
-| **Publishable key** (früher „anon public“) | beginnt mit `sb_publishable_…` oder `eyJ…` | nein, darf in die App |
+1. **Authentication → Sign In / Providers** (bzw. **Settings**): **Allow new users to sign up** → **aus**. Speichern.
+   *Damit kann sich niemand Fremdes ein Konto anlegen.*
+2. **Authentication → Users → Add user → Create new user**:
+   - **Email:** dieselbe Adresse wie in Schritt 2
+   - **Password:** ein neues, starkes Passwort → **in Proton Pass speichern**
+   - **Auto Confirm User:** **an**
+   - **Create user**
 
-⚠️ Den **secret key** (früher „service_role“) **niemals** weitergeben oder in die App eintragen.
+## 4. Zwei Werte an GitHub übergeben
 
-## 3. Anmeldung einstellen
-
-Unter **Authentication → Sign In / Providers**:
-- **Email** aktiviert lassen (Anmeldung per Link im Postfach, kein Passwort nötig).
-
-Unter **Authentication → URL Configuration**:
-- **Site URL:** `https://totogruss-oss.github.io/Wine-Guide/`
-- **Redirect URLs:** zusätzlich `http://localhost:3000` eintragen (für Tests)
-
-## 4. Werte in GitHub hinterlegen
-
-Im Repository **Wine-Guide → Settings → Secrets and variables → Actions → Tab „Variables“** → **New repository variable**:
+1. In Supabase: **Project Settings → API Keys** bzw. **Data API**. Notiere:
+   - **Project URL**, z. B. `https://abcdefgh.supabase.co`
+   - **Publishable key** (beginnt mit `sb_publishable_…`; bei älteren Projekten heißt er „anon public“ und beginnt mit `eyJ…`)
+   - ⚠️ Den **secret key** / „service_role“ **niemals** verwenden oder weitergeben.
+2. In GitHub: Repository **Wine-Guide → Settings → Secrets and variables → Actions** → Reiter **Variables** → **New repository variable**, zweimal:
 
 | Name | Wert |
 |---|---|
 | `SUPABASE_URL` | die Project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | der Publishable key |
 
-## 5. Danach (macht Claude in Stufe 2)
+   *Diese beiden Werte sind öffentlich (sie stecken in jeder Supabase-App). Geschützt sind die Daten durch euer Login und die Zugriffsregeln aus Schritt 2.*
 
-- Tabelle `wines` und Fotospeicher anlegen
-- Zugriffsregeln: **nur** eure zwei Konten dürfen lesen und schreiben
-- Danach **neue Registrierungen sperren** (Authentication → „Allow new users to sign up“ aus), damit niemand Fremdes ein Konto anlegen kann
-- Vorhandene Weine aus dem Handy in die gemeinsame Datenbank übernehmen
-- Die App funktioniert weiterhin offline und gleicht die Daten ab, sobald wieder Netz da ist
+3. **Actions → Deploy to GitHub Pages → Run workflow** klicken, damit die App mit den neuen Werten neu gebaut wird (ca. 1 Minute).
+
+## 5. In der App anmelden
+
+1. App auf dem Handy öffnen (ggf. einmal schließen und neu öffnen, damit die neue Version lädt).
+2. **Settings → Gemeinsame Datenbank** → E-Mail + Passwort → **Anmelden** (Proton Pass kann ausfüllen).
+3. Nach wenigen Sekunden: **„Alle Weine sind online gesichert.“** Oben rechts steht dauerhaft **„Gesichert“**.
+
+## Später: Kirsten dazuholen
+
+1. Im **SQL Editor** ausführen (mit Kirstens Adresse):
+   ```sql
+   insert into public.allowed_users (email) values ('kirsten@…');
+   ```
+2. **Authentication → Users → Add user → Create new user** für Kirsten (Auto Confirm an).
+3. Kirsten meldet sich in der App an und bekommt alle Weine automatisch.
+
+## Gut zu wissen
+
+- **Offline:** Gespeichert wird immer sofort auf dem Handy. Ohne Netz zeigt die App „Offline · x offen“ und lädt automatisch hoch, sobald wieder Netz da ist.
+- **Pausieren:** Kostenlose Supabase-Projekte werden nach **7 Tagen ganz ohne Nutzung** pausiert. Die App arbeitet dann lokal weiter; im Supabase-Dashboard mit **Restore project** wieder starten, danach gleicht alles automatisch ab.
+- **Sicherung:** Der kostenlose Tarif hat keine herunterladbaren Backups. Darum zusätzlich ab und zu **Settings → Exportieren (JSON)**.

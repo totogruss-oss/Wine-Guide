@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { getApiKey, setApiKey as storeApiKey } from '../lib/ai';
+import { importWines } from '../lib/wineRepo';
+import { CloudSyncSection } from '../components/CloudSyncSection';
 
 export default function Settings() {
   const [apiKey, setApiKey] = useState('');
@@ -103,8 +105,10 @@ export default function Settings() {
       try {
         const wines = JSON.parse(event.target?.result as string);
         if (Array.isArray(wines)) {
-          await db.wines.bulkPut(wines);
-          alert('Daten erfolgreich importiert!');
+          const count = await importWines(wines);
+          alert(`${count} Weine erfolgreich importiert!`);
+        } else {
+          alert('Die Datei enthält keine Weinliste.');
         }
       } catch (err) {
         alert('Fehler beim Importieren der Datei.');
@@ -119,6 +123,8 @@ export default function Settings() {
         <h1 className="text-2xl font-bold mb-2">Einstellungen</h1>
         <p className="text-[#787774] text-sm">Verwalte deine API-Schlüssel und Daten.</p>
       </div>
+
+      <CloudSyncSection />
 
       <section className="bg-white border border-[#e9e9e7] rounded-lg p-6 space-y-4">
         <div className="flex items-center gap-2 mb-4">

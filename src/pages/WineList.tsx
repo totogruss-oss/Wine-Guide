@@ -6,7 +6,7 @@ import { Search, Filter, Star, MapPin, Droplet, ArrowUpDown, ArrowUp, ArrowDown,
 import { motion, AnimatePresence } from 'framer-motion';
 import { WineIcon } from '../components/WineIcon';
 import { RebsorteIcon } from '../components/RebsorteIcon';
-import { GoogleGenAI } from '@google/genai';
+import { getGemini, MODELS } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
 
 type SortOrder = 'desc' | 'asc' | null;
@@ -80,7 +80,7 @@ export default function WineList() {
     setAnalysisError(null);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = getGemini();
       
       const wineData = wines.map(w => {
         return `- ${w.name} (${w.jahrgang || 'k.A.'}): ${w.farbe}, ${w.land}, ${w.anbaugebiet}. Rebsorte: ${w.rebsorte}. Note Kirsten: ${w.noteKirsten}, Note Torsten: ${w.noteTorsten}. Preis: ${w.preis}€.`;
@@ -94,7 +94,7 @@ Hier ist der Inhalt des Weinkellers:
 ${wineData}`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: MODELS.text,
         contents: prompt,
       });
 

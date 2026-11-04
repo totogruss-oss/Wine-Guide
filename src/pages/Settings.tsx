@@ -4,18 +4,19 @@ import { Download, Upload, Key, Database, Info } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { getApiKey, setApiKey as storeApiKey } from '../lib/ai';
 
 export default function Settings() {
   const [apiKey, setApiKey] = useState('');
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
-    const savedKey = localStorage.getItem('openai_api_key');
+    const savedKey = getApiKey();
     if (savedKey) setApiKey(savedKey);
   }, []);
 
   const saveApiKey = () => {
-    localStorage.setItem('openai_api_key', apiKey);
+    storeApiKey(apiKey);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -125,7 +126,9 @@ export default function Settings() {
           <h2 className="text-lg font-semibold">KI-Assistent API-Key</h2>
         </div>
         <p className="text-sm text-[#787774]">
-          Hinterlege deinen API-Key (z.B. Gemini oder OpenAI), um die KI-Funktionen (wie die semantische Suche "Welcher Wein passt zu...") nutzen zu können. Der Key wird nur lokal in deinem Browser gespeichert.
+          Hinterlege deinen Gemini-API-Key, um die KI-Funktionen (Diktieren, Keller-Analyse, KI-Sommelier, KI-Bild) zu nutzen. Den Key bekommst du kostenlos unter{' '}
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">aistudio.google.com/apikey</a>.
+          Er wird nur auf diesem Gerät gespeichert und muss auf jedem Handy einmal eingetragen werden.
         </p>
         <div className="flex gap-2">
           <input

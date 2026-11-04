@@ -3,6 +3,7 @@ import { db } from '../db';
 import { Send, Bot, User, AlertCircle, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { GoogleGenAI } from '@google/genai';
+import { getApiKey, MODELS } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
 
 interface Message {
@@ -34,9 +35,9 @@ export default function AISearch() {
     setError(null);
 
     try {
-      const apiKey = localStorage.getItem('openai_api_key') || process.env.GEMINI_API_KEY;
+      const apiKey = getApiKey();
       if (!apiKey) {
-        setError('Bitte hinterlege zuerst deinen API-Key in den Einstellungen.');
+        setError('Bitte hinterlege zuerst deinen KI-Schlüssel unter „Einstellungen“.');
         setIsLoading(false);
         return;
       }
@@ -56,48 +57,18 @@ Sei freundlich, präzise und formatiere deine Antwort übersichtlich (z.B. mit B
 Hier ist die Wein-Datenbank:
 ${wineContext || 'Die Datenbank ist noch leer.'}`;
 
-      // Check if it's an OpenAI key (sk-... format)
-      if (apiKey.startsWith('sk-')) {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              ...messages.map(m => ({ role: m.role, content: m.content })),
-              { role: 'user', content: userMsg }
-            ],
-            temperature: 0.7,
-          })
-        });
+      const ai = new GoogleGenAI({ apiKey });
+      
+      // Convert messages to Gemini format
+      const geminiMessages = messages.map(m => `${m.role === 'user' ? 'Nutzer' : 'Assistent'}: ${m.content}`).join('\n\n');
+      const prompt = `${systemPrompt}\n\nBisheriger Chatverlauf:\n${geminiMessages}\n\nNutzer: ${userMsg}\nAssistent:`;
 
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error?.message || 'Fehler bei der API-Anfrage');
-        }
+      const response = await ai.models.generateContent({
+        model: MODELS.text,
+        contents: prompt,
+      });
 
-        const data = await response.json();
-        const aiResponse = data.choices[0].message.content;
-        setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
-      } else {
-        // Use Gemini
-        const ai = new GoogleGenAI({ apiKey });
-        
-        // Convert messages to Gemini format
-        const geminiMessages = messages.map(m => `${m.role === 'user' ? 'Nutzer' : 'Assistent'}: ${m.content}`).join('\n\n');
-        const prompt = `${systemPrompt}\n\nBisheriger Chatverlauf:\n${geminiMessages}\n\nNutzer: ${userMsg}\nAssistent:`;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: prompt,
-        });
-
-        setMessages(prev => [...prev, { role: 'assistant', content: response.text || 'Keine Antwort erhalten.' }]);
-      }
+      setMessages(prev => [...prev, { role: 'assistant', content: response.text || 'Keine Antwort erhalten.' }]);
     } catch (err: any) {
       setError(err.message || 'Ein unbekannter Fehler ist aufgetreten.');
     } finally {

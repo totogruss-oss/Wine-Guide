@@ -42,7 +42,15 @@ db.version(3).stores({
   wines: '++id, name, farbe, land, anbaugebiet, rebsorte, winzer, noteKirsten, noteTorsten, createdAt'
 });
 
-export async function populateMockData() {
+/** Legt beim allerersten Start eure ersten drei echten Weine an. */
+export async function seedInitialWines() {
+  const SEED_FLAG = 'wine_guide_seeded';
+  try {
+    if (localStorage.getItem(SEED_FLAG)) return;
+    localStorage.setItem(SEED_FLAG, '1');
+  } catch {
+    /* ohne Speicher: nur auf leere Datenbank prüfen */
+  }
   const count = await db.wines.count();
   if (count === 0) {
     await db.wines.bulkAdd([

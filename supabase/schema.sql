@@ -55,6 +55,8 @@ create trigger wines_touch
 
 -- 3) Zugriffsregeln: nur angemeldete UND freigeschaltete Personen
 alter table public.wines enable row level security;
+-- Neuere Supabase-Projekte geben neue Tabellen nicht immer automatisch frei
+grant select, insert, update on public.wines to authenticated;
 
 drop policy if exists wines_select on public.wines;
 create policy wines_select on public.wines

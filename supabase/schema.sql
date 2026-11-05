@@ -11,7 +11,12 @@ create table if not exists public.allowed_users (
 alter table public.allowed_users enable row level security;
 -- Keine Policies: Die App kann diese Liste weder lesen noch ändern.
 
-create or replace function public.is_allowed_user()
+-- Prüffunktion liegt im Schema "private": von außen (API) nicht aufrufbar
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
+create or replace function private.is_allowed_user()
 returns boolean
 language sql
 stable
@@ -23,6 +28,9 @@ as $$
     where lower(email) = lower(auth.jwt() ->> 'email')
   );
 $$;
+revoke execute on function private.is_allowed_user() from public, anon;
+grant execute on function private.is_allowed_user() to authenticated;
+revoke all on public.allowed_users from anon, authenticated;
 
 -- 2) Die Weine. Alle Felder stecken flexibel in "data" (JSON),
 --    damit neue Felder in der App keine Datenbank-Änderung brauchen.
@@ -57,19 +65,22 @@ create trigger wines_touch
 alter table public.wines enable row level security;
 -- Neuere Supabase-Projekte geben neue Tabellen nicht immer automatisch frei
 grant select, insert, update on public.wines to authenticated;
+-- Doppelte Absicherung: Weine können nie endgültig gelöscht werden
+revoke delete, truncate, references, trigger on public.wines from authenticated;
+revoke all on public.wines from anon;
 
 drop policy if exists wines_select on public.wines;
 create policy wines_select on public.wines
-  for select to authenticated using (public.is_allowed_user());
+  for select to authenticated using (private.is_allowed_user());
 
 drop policy if exists wines_insert on public.wines;
 create policy wines_insert on public.wines
-  for insert to authenticated with check (public.is_allowed_user());
+  for insert to authenticated with check (private.is_allowed_user());
 
 drop policy if exists wines_update on public.wines;
 create policy wines_update on public.wines
   for update to authenticated
-  using (public.is_allowed_user()) with check (public.is_allowed_user());
+  using (private.is_allowed_user()) with check (private.is_allowed_user());
 -- Kein echtes Löschen: Gelöschte Weine werden nur markiert (deleted = true).
 
 -- 4) Freischalten (Kirsten später mit derselben Zeile ergänzen)

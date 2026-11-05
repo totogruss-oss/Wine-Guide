@@ -1,5 +1,7 @@
 # Gemeinsame Datenbank einrichten (Supabase)
 
+> **Stand:** Eingerichtet am 05.11.2026. Projekt `wine-guide`, Region Frankfurt (eu-central-1). Diese Anleitung dient zum Nachschlagen oder für einen Neuaufbau.
+
 Supabase ist die gemeinsame Online-Datenbank für den Wein-Guide. Der kostenlose Tarif reicht für zwei Personen völlig aus.
 **Dauer:** ca. 15 Minuten. **Programmieren musst du nichts**, nur klicken und einmal SQL einfügen.
 

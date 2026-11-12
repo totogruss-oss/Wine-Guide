@@ -5,11 +5,12 @@
 
 import { db, type Wine } from '../db';
 import { requestSync } from './sync';
+import { normalizeWine } from './wineFields';
 
 export async function saveWine(wine: Partial<Wine>): Promise<number> {
   const now = Date.now();
   const record = {
-    ...wine,
+    ...normalizeWine(wine),
     uuid: wine.uuid || crypto.randomUUID(),
     createdAt: wine.createdAt || now,
     updatedAt: now,
@@ -43,7 +44,7 @@ export async function importWines(wines: Partial<Wine>[]): Promise<number> {
       const { id: _ignored, ...rest } = raw;
       const existing = rest.uuid ? await db.wines.where('uuid').equals(rest.uuid).first() : undefined;
       await db.wines.put({
-        ...rest,
+        ...normalizeWine(rest),
         id: existing?.id,
         uuid: rest.uuid || crypto.randomUUID(),
         createdAt: rest.createdAt || now,

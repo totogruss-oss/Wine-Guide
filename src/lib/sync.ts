@@ -13,6 +13,7 @@
 
 import { db, type Wine } from '../db';
 import { supabase } from './supabase';
+import { normalizeWine } from './wineFields';
 
 export type SyncState = 'disabled' | 'signedOut' | 'offline' | 'syncing' | 'ok' | 'error';
 
@@ -156,7 +157,7 @@ async function pull() {
         if (row.deleted) {
           if (local) await db.wines.delete(local.id!);
         } else {
-          await db.wines.put({ ...row.data, id: local?.id, uuid: row.id, dirty: 0 } as Wine);
+          await db.wines.put({ ...normalizeWine(row.data), id: local?.id, uuid: row.id, dirty: 0 } as Wine);
         }
       }
     });

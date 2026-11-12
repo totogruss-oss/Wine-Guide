@@ -5,8 +5,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Camera, Save, ArrowLeft, X, Image as ImageIcon, MapPin, Check, Mic, Loader2, Plus, Sparkles } from 'lucide-react';
 import { PREDEFINED_REBSORTEN, PREDEFINED_ANBAUGEBIETE, PREDEFINED_LAENDER, PREDEFINED_GESCHMACK, PREDEFINED_GERUCH } from '../data/wineData';
 import { AutocompleteInput } from '../components/AutocompleteInput';
+import { RebsortenInput } from '../components/RebsortenInput';
+import { KaufdatumInput } from '../components/KaufdatumInput';
+import { getRebsorten, normalizeWine, rebsortenText } from '../lib/wineFields';
 import { Tooltip } from '../components/Tooltip';
-import { RebsorteIcon } from '../components/RebsorteIcon';
 import { Type } from '@google/genai';
 import { getGemini, MODELS, MissingApiKeyError } from '../lib/ai';
 import { saveWine as persistWine, deleteWine as removeWine } from '../lib/wineRepo';
@@ -43,7 +45,8 @@ export default function WineForm() {
       
       const promptParts = ['A professional, elegant product photography shot of a single wine bottle standing upright against a clean light background.'];
       if (wine.farbe) promptParts.push(`It is a ${wine.farbe} wine.`);
-      if (wine.rebsorte) promptParts.push(`The grape variety is ${wine.rebsorte}.`);
+      const sorten = rebsortenText(wine);
+      if (sorten) promptParts.push(`The grape variety is ${sorten}.`);
       if (wine.name) promptParts.push(`The wine label has the word "${wine.name}".`);
       promptParts.push('High quality, photorealistic, cinematic studio lighting.');
 
@@ -87,13 +90,12 @@ export default function WineForm() {
   const audioChunksRef = useRef<Blob[]>([]);
 
   // Auto-suggest lists
-  const dbRebsorten = useLiveQuery(() => db.wines.orderBy('rebsorte').uniqueKeys()) as string[] | undefined;
+  const dbRebsorten = useLiveQuery(() => db.wines.orderBy('rebsorten').uniqueKeys()) as string[] | undefined;
   const dbWinzer = useLiveQuery(() => db.wines.orderBy('winzer').uniqueKeys()) as string[] | undefined;
   const dbLaender = useLiveQuery(() => db.wines.orderBy('land').uniqueKeys()) as string[] | undefined;
   const dbAnbaugebiete = useLiveQuery(() => db.wines.orderBy('anbaugebiet').uniqueKeys()) as string[] | undefined;
 
-  const rebsortenRaw = Array.from(new Set([...PREDEFINED_REBSORTEN, ...(dbRebsorten || [])])).filter(Boolean).sort();
-  const rebsorten = rebsortenRaw.map(r => ({ value: r, label: r, icon: <RebsorteIcon rebsorte={r} /> }));
+  const rebsorten = Array.from(new Set([...PREDEFINED_REBSORTEN, ...(dbRebsorten || [])])).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'));
   
   const laender = Array.from(new Set([...PREDEFINED_LAENDER, ...(dbLaender || [])])).filter(Boolean).sort();
   const anbaugebiete = Array.from(new Set([...PREDEFINED_ANBAUGEBIETE, ...(dbAnbaugebiete || [])])).filter(Boolean).sort();
@@ -103,7 +105,7 @@ export default function WineForm() {
     if (id) {
       db.wines.get(Number(id)).then(w => {
         if (w) {
-          setWine(w);
+          setWine(normalizeWine(w));
           if (w.image) setImagePreview(w.image);
         }
       });
@@ -244,7 +246,7 @@ Mögliche Felder (alle optional):
 - geschmacksnote (String: "Trocken", "Halbtrocken", "Feinherb", "Lieblich" oder "Süß")
 - land (String)
 - anbaugebiet (String)
-- rebsorte (String)
+- rebsorten (Array of Strings – eine oder mehrere Rebsorten, bei Cuvées alle genannten)
 - winzer (String)
 - jahrgang (Number)
 - preis (Number)
@@ -269,7 +271,7 @@ Mögliche Felder (alle optional):
                     geschmacksnote: { type: Type.STRING },
                     land: { type: Type.STRING },
                     anbaugebiet: { type: Type.STRING },
-                    rebsorte: { type: Type.STRING },
+                    rebsorten: { type: Type.ARRAY, items: { type: Type.STRING } },
                     winzer: { type: Type.STRING },
                     jahrgang: { type: Type.INTEGER },
                     preis: { type: Type.NUMBER },
@@ -611,11 +613,11 @@ Mögliche Felder (alle optional):
 
         {/* Details */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <AutocompleteInput
-            label="Rebsorte"
+          <RebsortenInput
+            label="Rebsorte(n)"
             options={rebsorten}
-            value={wine.rebsorte || ''}
-            onValueChange={(val) => setWine({ ...wine, rebsorte: val })}
+            value={getRebsorten(wine)}
+            onChange={(val) => setWine(prev => ({ ...prev, rebsorten: val, rebsorte: val.join(', ') || undefined }))}
           />
 
           <AutocompleteInput
@@ -660,15 +662,10 @@ Mögliche Felder (alle optional):
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#787774]">Kaufdatum</label>
-            <input
-              type="date"
-              value={wine.kaufdatum || ''}
-              onChange={e => setWine({ ...wine, kaufdatum: e.target.value })}
-              className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
-            />
-          </div>
+          <KaufdatumInput
+            value={wine.kaufdatum}
+            onChange={(val) => setWine(prev => ({ ...prev, kaufdatum: val }))}
+          />
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-[#787774]">Kauf- / Genussort</label>

@@ -7,6 +7,7 @@ import 'jspdf-autotable';
 import { getApiKey, setApiKey as storeApiKey } from '../lib/ai';
 import { importWines } from '../lib/wineRepo';
 import { CloudSyncSection } from '../components/CloudSyncSection';
+import { formatKaufdatum, rebsortenText } from '../lib/wineFields';
 
 export default function Settings() {
   const [apiKey, setApiKey] = useState('');
@@ -44,12 +45,12 @@ export default function Settings() {
       Geschmacksnote: wine.geschmacksnote || '',
       Land: wine.land || '',
       Anbaugebiet: wine.anbaugebiet || '',
-      Rebsorte: wine.rebsorte || '',
+      Rebsorte: rebsortenText(wine),
       Winzer: wine.winzer || '',
       Jahrgang: wine.jahrgang || '',
       Preis: wine.preis || '',
       Kaufort: wine.kaufort || '',
-      Kaufdatum: wine.kaufdatum || '',
+      Kaufdatum: formatKaufdatum(wine.kaufdatum),
       Besonderheiten: wine.besonderheiten || '',
       Geruch: wine.geruch?.join(', ') || '',
       Geschmack: wine.geschmack?.join(', ') || '',
@@ -76,7 +77,7 @@ export default function Settings() {
       wine.name,
       wine.farbe || '',
       wine.land || '',
-      wine.rebsorte || '',
+      rebsortenText(wine),
       wine.jahrgang?.toString() || '',
       wine.preis ? `${wine.preis.toFixed(2)} €` : '',
       wine.noteKirsten?.toString() || '',

@@ -6,6 +6,7 @@ import { Search, Filter, Star, MapPin, Droplet, ArrowUpDown, ArrowUp, ArrowDown,
 import { motion, AnimatePresence } from 'framer-motion';
 import { WineIcon } from '../components/WineIcon';
 import { RebsorteIcon } from '../components/RebsorteIcon';
+import { getRebsorten, kaufdatumSortKey, rebsortenText } from '../lib/wineFields';
 import { getGemini, MODELS } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
 
@@ -39,7 +40,7 @@ export default function WineList() {
         const lowerSearch = search.toLowerCase();
         collection = collection.filter(w => 
           w.name.toLowerCase().includes(lowerSearch) || 
-          (w.rebsorte || '').toLowerCase().includes(lowerSearch) ||
+          rebsortenText(w).toLowerCase().includes(lowerSearch) ||
           (w.land || '').toLowerCase().includes(lowerSearch)
         );
       }
@@ -49,8 +50,8 @@ export default function WineList() {
       return results.then(arr => {
         if (sortDate) {
           arr.sort((a, b) => {
-            const dateA = a.kaufdatum ? new Date(a.kaufdatum).getTime() : 0;
-            const dateB = b.kaufdatum ? new Date(b.kaufdatum).getTime() : 0;
+            const dateA = kaufdatumSortKey(a.kaufdatum);
+            const dateB = kaufdatumSortKey(b.kaufdatum);
             return sortDate === 'asc' ? dateA - dateB : dateB - dateA;
           });
         }
@@ -83,7 +84,7 @@ export default function WineList() {
       const ai = getGemini();
       
       const wineData = wines.map(w => {
-        return `- ${w.name} (${w.jahrgang || 'k.A.'}): ${w.farbe}, ${w.land}, ${w.anbaugebiet}. Rebsorte: ${w.rebsorte}. Note Kirsten: ${w.noteKirsten}, Note Torsten: ${w.noteTorsten}. Preis: ${w.preis}€.`;
+        return `- ${w.name} (${w.jahrgang || 'k.A.'}): ${w.farbe}, ${w.land}, ${w.anbaugebiet}. Rebsorte(n): ${rebsortenText(w) || 'k.A.'}. Note Kirsten: ${w.noteKirsten}, Note Torsten: ${w.noteTorsten}. Preis: ${w.preis}€.`;
       }).join('\n');
 
       const prompt = `Du bist ein erfahrener Sommelier. Analysiere den folgenden Weinkeller und erstelle eine übersichtliche Zusammenfassung.
@@ -216,10 +217,10 @@ ${wineData}`;
                 </div>
                 
                 <div className={`space-y-1.5 ${viewMode === 'list' ? 'flex-1 overflow-hidden' : ''}`}>
-                  {wine.rebsorte && (
+                  {getRebsorten(wine).length > 0 && (
                     <div className="flex items-center gap-2 text-sm text-[#787774]">
-                      <RebsorteIcon rebsorte={wine.rebsorte} className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{wine.rebsorte}</span>
+                      <RebsorteIcon rebsorte={getRebsorten(wine)[0]} className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{rebsortenText(wine)}</span>
                     </div>
                   )}
                   {wine.land && (

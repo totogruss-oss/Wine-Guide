@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { splitRebsorten } from './lib/wineFields';
 
 export interface Wine {
   id?: number;
@@ -8,6 +9,7 @@ export interface Wine {
   farbe?: string;
   geruch?: string[];
   geschmack?: string[];
+  /** "JJJJ-MM-TT", "JJJJ-MM" oder "JJJJ" – je nachdem, wie genau man es noch weiß */
   kaufdatum?: string;
   kaufort?: string;
   genussort?: string;
@@ -16,7 +18,10 @@ export interface Wine {
   land?: string;
   anbaugebiet?: string;
   jahrgang?: number;
+  /** Alt: eine Rebsorte als Text. Wird weiter als lesbarer Text mitgeschrieben. */
   rebsorte?: string;
+  /** Eine oder mehrere Rebsorten (Cuvée) */
+  rebsorten?: string[];
   winzer?: string;
   besonderheiten?: string;
   noteKirsten?: number;
@@ -64,6 +69,17 @@ db.version(4).stores({
     if (!w.uuid) w.uuid = crypto.randomUUID();
     if (!w.updatedAt) w.updatedAt = w.createdAt || Date.now();
     w.dirty = 1;
+  })
+);
+
+db.version(5).stores({
+  wines: '++id, &uuid, dirty, name, farbe, land, anbaugebiet, rebsorte, *rebsorten, winzer, noteKirsten, noteTorsten, createdAt',
+  pendingDeletes: 'uuid',
+}).upgrade(tx =>
+  // Rebsorten als Liste anlegen. Nur lokal: Die App liest das alte Format weiterhin,
+  // daher müssen nicht alle Weine (samt Fotos) neu hochgeladen werden.
+  tx.table('wines').toCollection().modify((w: Wine) => {
+    if (!w.rebsorten && w.rebsorte) w.rebsorten = splitRebsorten(w.rebsorte);
   })
 );
 

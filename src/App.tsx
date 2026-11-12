@@ -15,6 +15,7 @@ import WineList from './pages/WineList';
 import WineForm from './pages/WineForm';
 import AISearch from './pages/AISearch';
 import Settings from './pages/Settings';
+import { rebsortenText } from './lib/wineFields';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -81,7 +82,7 @@ function Layout({ children }: { children: React.ReactNode }) {
       const wineId = Number(match[1]);
       const wine = await db.wines.get(wineId);
       if (wine) {
-        const text = `Schau dir diesen Wein an: ${wine.name} (${wine.jahrgang || 'Ohne Jahrgang'})\nRebsorte: ${wine.rebsorte || '-'}\nBewertung: ${wine.noteKirsten || '-'}/10 (Kirsten), ${wine.noteTorsten || '-'}/10 (Torsten)\n\nNotizen: ${wine.kommentarKirsten || ''} ${wine.kommentarTorsten || ''}`;
+        const text = `Schau dir diesen Wein an: ${wine.name} (${wine.jahrgang || 'Ohne Jahrgang'})\nRebsorte: ${rebsortenText(wine) || '-'}\nBewertung: ${wine.noteKirsten || '-'}/10 (Kirsten), ${wine.noteTorsten || '-'}/10 (Torsten)\n\nNotizen: ${wine.kommentarKirsten || ''} ${wine.kommentarTorsten || ''}`;
         if (navigator.share) {
           try {
             await navigator.share({

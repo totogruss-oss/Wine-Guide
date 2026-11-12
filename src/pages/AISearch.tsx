@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { GoogleGenAI } from '@google/genai';
 import { getApiKey, MODELS } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
+import { rebsortenText } from '../lib/wineFields';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -45,7 +46,7 @@ export default function AISearch() {
       // Fetch all wines to build context
       const wines = await db.wines.toArray();
       const wineContext = wines.map(w => {
-        return `- ${w.name} (${w.jahrgang || 'k.A.'}): ${w.farbe}, ${w.geschmacksnote}. Rebsorte: ${w.rebsorte}. Geruch: ${w.geruch?.join(', ')}. Geschmack: ${w.geschmack?.join(', ')}. Note Kirsten: ${w.noteKirsten}, Note Torsten: ${w.noteTorsten}. Besonderheiten: ${w.besonderheiten}.`;
+        return `- ${w.name} (${w.jahrgang || 'k.A.'}): ${w.farbe}, ${w.geschmacksnote}. Rebsorte(n): ${rebsortenText(w) || 'k.A.'}. Geruch: ${w.geruch?.join(', ')}. Geschmack: ${w.geschmack?.join(', ')}. Note Kirsten: ${w.noteKirsten}, Note Torsten: ${w.noteTorsten}. Besonderheiten: ${w.besonderheiten}.`;
       }).join('\n');
 
       const systemPrompt = `Du bist ein hilfreicher Wein-Sommelier. Du hast Zugriff auf die private Wein-Datenbank des Nutzers. 

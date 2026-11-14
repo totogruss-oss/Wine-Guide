@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { db, type Wine } from '../db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Camera, Save, ArrowLeft, X, Image as ImageIcon, MapPin, Check, Mic, Loader2, Plus, Sparkles } from 'lucide-react';
+import { Camera, Save, ArrowLeft, X, Image as ImageIcon, MapPin, Check, Mic, Loader2, Plus, Sparkles, ScanText, AlertTriangle, ChevronDown } from 'lucide-react';
 import { PREDEFINED_REBSORTEN, PREDEFINED_ANBAUGEBIETE, PREDEFINED_LAENDER, PREDEFINED_GESCHMACK, PREDEFINED_GERUCH } from '../data/wineData';
 import { AutocompleteInput } from '../components/AutocompleteInput';
 import { RebsortenInput } from '../components/RebsortenInput';
@@ -10,15 +10,27 @@ import { KaufdatumInput } from '../components/KaufdatumInput';
 import { getRebsorten, normalizeWine, rebsortenText } from '../lib/wineFields';
 import { Tooltip } from '../components/Tooltip';
 import { Type } from '@google/genai';
-import { getGemini, MODELS, MissingApiKeyError } from '../lib/ai';
+import { getApiKey, getGemini, MODELS, MissingApiKeyError } from '../lib/ai';
+import { fillEmptyFields, scanLabel, SCAN_FELDER } from '../lib/labelScan';
+import { formatKaufdatum } from '../lib/wineFields';
 import { saveWine as persistWine, deleteWine as removeWine } from '../lib/wineRepo';
 import { compressImage } from '../lib/image';
 
 const GESCHMACKSNOTEN = ['Trocken', 'Halbtrocken', 'Feinherb', 'Lieblich', 'Süß'];
 const FARBEN = ['Weiß', 'Rot', 'Rosé', 'Orange'];
 
-export default function WineForm() {
+/**
+ * Neues Formular pro Wein: Ohne den key würde React beim Wechsel von
+ * „Bearbeiten“ zu „Neu“ das alte Formular samt Inhalt weiterverwenden –
+ * Speichern hätte dann den bearbeiteten Wein überschrieben.
+ */
+export default function WineFormRoute() {
   const { id } = useParams();
+  const location = useLocation();
+  return <WineForm key={location.key} id={id} />;
+}
+
+function WineForm({ id }: { id?: string }) {
   const navigate = useNavigate();
   const [wine, setWine] = useState<Partial<Wine>>({
     name: '',
@@ -35,6 +47,35 @@ export default function WineForm() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [scan, setScan] = useState<{ state: 'idle' | 'scanning' | 'done' | 'error'; message: string }>({ state: 'idle', message: '' });
+  const [detailsOpen, setDetailsOpen] = useState(!!id);
+  /** Hochaufgelöste Fassung des zuletzt aufgenommenen Fotos – nur für den Scan, wird nicht gespeichert */
+  const scanSourceRef = useRef<string | null>(null);
+  const wineRef = useRef(wine);
+  useEffect(() => { wineRef.current = wine; }, [wine]);
+
+  const runScan = async (dataUrl: string) => {
+    if (!getApiKey()) {
+      setScan({ state: 'error', message: 'Kein KI-Schlüssel hinterlegt – das Etikett wird nicht ausgelesen. Speichern geht trotzdem.' });
+      return;
+    }
+    if (!navigator.onLine) {
+      setScan({ state: 'error', message: 'Offline – das Etikett kann gerade nicht ausgelesen werden. Foto und Eingaben bleiben erhalten; Auslesen später über „Etikett auslesen“ nachholen.' });
+      return;
+    }
+    setScan({ state: 'scanning', message: 'Etikett wird gelesen …' });
+    try {
+      const result = await scanLabel(getGemini(), dataUrl);
+      const { filled } = fillEmptyFields(wineRef.current, result);
+      setWine(prev => fillEmptyFields(prev, result).wine);
+      setScan(filled.length
+        ? { state: 'done', message: `${filled.length} ${filled.length === 1 ? 'Feld' : 'Felder'} vom Etikett übernommen (${filled.map(f => SCAN_FELDER[f]).join(', ')}) – bitte kurz prüfen.` }
+        : { state: 'done', message: 'Etikett gelesen – keine neuen Angaben gefunden. Vorhandene Einträge bleiben unverändert.' });
+    } catch (err) {
+      console.error('Etikett-Scan fehlgeschlagen:', err);
+      setScan({ state: 'error', message: 'Das Etikett konnte nicht ausgelesen werden. Foto und Eingaben bleiben erhalten – Speichern geht trotzdem.' });
+    }
+  };
 
   const generateAIImage = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -101,6 +142,16 @@ export default function WineForm() {
   const anbaugebiete = Array.from(new Set([...PREDEFINED_ANBAUGEBIETE, ...(dbAnbaugebiete || [])])).filter(Boolean).sort();
   const winzerList = (dbWinzer || []).filter(Boolean).sort();
 
+  const detailsSummary = [
+    wine.farbe,
+    getRebsorten(wine).join(', '),
+    [wine.land, wine.anbaugebiet].filter(Boolean).join(' / '),
+    wine.jahrgang,
+    wine.geschmacksnote,
+    wine.winzer,
+    formatKaufdatum(wine.kaufdatum),
+  ].filter(Boolean).join(' · ');
+
   useEffect(() => {
     if (id) {
       db.wines.get(Number(id)).then(w => {
@@ -114,39 +165,28 @@ export default function WineForm() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = ''; // dasselbe Foto erneut wählen können
     if (!file) return;
+
+    const scale = (img: HTMLImageElement, max: number, quality: number) => {
+      const factor = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * factor);
+      canvas.height = Math.round(img.height * factor);
+      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', quality);
+    };
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        
-        // Compress to JPEG, 0.7 quality
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        // Gespeichert wird eine kleine Fassung (800 px), ausgelesen eine schärfere (1600 px)
+        const dataUrl = scale(img, 800, 0.7);
+        scanSourceRef.current = scale(img, 1600, 0.85);
         setImagePreview(dataUrl);
         setWine(prev => ({ ...prev, image: dataUrl }));
+        runScan(scanSourceRef.current);
       };
       img.src = event.target?.result as string;
     };
@@ -445,287 +485,37 @@ Mögliche Felder (alle optional):
               onChange={handleImageUpload}
             />
           </div>
-        </section>
 
-        {/* Characteristics */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#787774]">Farbe</label>
-            <select
-              value={wine.farbe || ''}
-              onChange={e => setWine({ ...wine, farbe: e.target.value })}
-              className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+          {/* Etikett-Scan */}
+          {scan.state !== 'idle' && (
+            <div
+              className={`p-3 rounded-md text-sm flex items-start justify-between gap-2 border ${scan.state === 'error' ? 'bg-amber-50 border-amber-200 text-amber-800' : scan.state === 'scanning' ? 'bg-purple-50 border-purple-200 text-purple-800' : 'bg-green-50 border-green-200 text-green-800'}`}
+              role="status"
             >
-              <option value="">Auswählen...</option>
-              {FARBEN.map(f => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#787774]">Geschmacksnote</label>
-            <select
-              value={wine.geschmacksnote || ''}
-              onChange={e => setWine({ ...wine, geschmacksnote: e.target.value })}
-              className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+              <span className="flex items-start gap-2">
+                {scan.state === 'scanning' ? <Loader2 className="w-4 h-4 mt-0.5 shrink-0 animate-spin" /> : scan.state === 'error' ? <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> : <ScanText className="w-4 h-4 mt-0.5 shrink-0" />}
+                <span>{scan.message}</span>
+              </span>
+              {scan.state !== 'scanning' && (
+                <button type="button" onClick={() => setScan({ state: 'idle', message: '' })} className="p-0.5 rounded hover:bg-black/5" aria-label="Hinweis schließen">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+          {imagePreview && scan.state !== 'scanning' && (
+            <button
+              type="button"
+              onClick={() => runScan(scanSourceRef.current || imagePreview)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-[#e9e9e7] rounded-md text-sm font-medium text-[#37352f] hover:bg-[#f7f7f5] transition-colors"
             >
-              <option value="">Auswählen...</option>
-              {GESCHMACKSNOTEN.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-          </div>
-        </section>
-
-        {/* Tags */}
-        <section className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[#787774]">Geruch</label>
-            <div className="flex flex-wrap gap-2">
-              {PREDEFINED_GERUCH.map(tag => {
-                const isActive = wine.geruch?.includes(tag.term);
-                return (
-                  <Tooltip key={tag.term} content={tag.description}>
-                    <button
-                      type="button"
-                      onClick={() => toggleTag('geruch', tag.term)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${isActive ? 'bg-[#37352f] text-white border-[#37352f]' : 'bg-white text-[#787774] border-[#e9e9e7] hover:bg-[#f7f7f5]'}`}
-                    >
-                      {tag.term}
-                    </button>
-                  </Tooltip>
-                );
-              })}
-              {wine.geruch?.filter(t => !PREDEFINED_GERUCH.some(pt => pt.term === t)).map(tag => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => toggleTag('geruch', tag)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-                  title="Eigenen Begriff entfernen"
-                >
-                  {tag}
-                  <X className="w-3 h-3" />
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <input
-                type="text"
-                value={customGeruch}
-                onChange={e => setCustomGeruch(e.target.value)}
-                placeholder="Eigener Begriff..."
-                className="flex-1 rounded-md border border-[#e9e9e7] px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#37352f]/20"
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (customGeruch.trim()) {
-                      if (!wine.geruch?.includes(customGeruch.trim())) {
-                        setWine({ ...wine, geruch: [...(wine.geruch || []), customGeruch.trim()] });
-                      }
-                      setCustomGeruch('');
-                    }
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (customGeruch.trim()) {
-                    if (!wine.geruch?.includes(customGeruch.trim())) {
-                      setWine({ ...wine, geruch: [...(wine.geruch || []), customGeruch.trim()] });
-                    }
-                    setCustomGeruch('');
-                  }
-                }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[#f7f7f5] border border-[#e9e9e7] rounded-md text-sm font-medium hover:bg-[#e9e9e7] text-[#37352f] transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Hinzufügen
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-[#787774]">Geschmack</label>
-            <div className="flex flex-wrap gap-2">
-              {PREDEFINED_GESCHMACK.map(tag => {
-                const isActive = wine.geschmack?.includes(tag.term);
-                return (
-                  <Tooltip key={tag.term} content={tag.description}>
-                    <button
-                      type="button"
-                      onClick={() => toggleTag('geschmack', tag.term)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${isActive ? 'bg-[#37352f] text-white border-[#37352f]' : 'bg-white text-[#787774] border-[#e9e9e7] hover:bg-[#f7f7f5]'}`}
-                    >
-                      {tag.term}
-                    </button>
-                  </Tooltip>
-                );
-              })}
-              {wine.geschmack?.filter(t => !PREDEFINED_GESCHMACK.some(pt => pt.term === t)).map(tag => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => toggleTag('geschmack', tag)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-                  title="Eigenen Begriff entfernen"
-                >
-                  {tag}
-                  <X className="w-3 h-3" />
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <input
-                type="text"
-                value={customGeschmack}
-                onChange={e => setCustomGeschmack(e.target.value)}
-                placeholder="Eigener Begriff..."
-                className="flex-1 rounded-md border border-[#e9e9e7] px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#37352f]/20"
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (customGeschmack.trim()) {
-                      if (!wine.geschmack?.includes(customGeschmack.trim())) {
-                        setWine({ ...wine, geschmack: [...(wine.geschmack || []), customGeschmack.trim()] });
-                      }
-                      setCustomGeschmack('');
-                    }
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (customGeschmack.trim()) {
-                    if (!wine.geschmack?.includes(customGeschmack.trim())) {
-                      setWine({ ...wine, geschmack: [...(wine.geschmack || []), customGeschmack.trim()] });
-                    }
-                    setCustomGeschmack('');
-                  }
-                }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[#f7f7f5] border border-[#e9e9e7] rounded-md text-sm font-medium hover:bg-[#e9e9e7] text-[#37352f] transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Hinzufügen
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* Details */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <RebsortenInput
-            label="Rebsorte(n)"
-            options={rebsorten}
-            value={getRebsorten(wine)}
-            onChange={(val) => setWine(prev => ({ ...prev, rebsorten: val, rebsorte: val.join(', ') || undefined }))}
-          />
-
-          <AutocompleteInput
-            label="Winzer"
-            options={winzerList}
-            value={wine.winzer || ''}
-            onValueChange={(val) => setWine({ ...wine, winzer: val })}
-          />
-
-          <AutocompleteInput
-            label="Land"
-            options={laender}
-            value={wine.land || ''}
-            onValueChange={(val) => setWine({ ...wine, land: val })}
-          />
-
-          <AutocompleteInput
-            label="Anbaugebiet"
-            options={anbaugebiete}
-            value={wine.anbaugebiet || ''}
-            onValueChange={(val) => setWine({ ...wine, anbaugebiet: val })}
-          />
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#787774]">Jahrgang</label>
-            <input
-              type="number"
-              value={wine.jahrgang || ''}
-              onChange={e => setWine({ ...wine, jahrgang: parseInt(e.target.value) || undefined })}
-              className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#787774]">Preis (€)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={wine.preis || ''}
-              onChange={e => setWine({ ...wine, preis: parseFloat(e.target.value) || undefined })}
-              className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
-            />
-          </div>
-
-          <KaufdatumInput
-            value={wine.kaufdatum}
-            onChange={(val) => setWine(prev => ({ ...prev, kaufdatum: val }))}
-          />
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[#787774]">Kauf- / Genussort</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={wine.kaufort || ''}
-                onChange={e => setWine({ ...wine, kaufort: e.target.value })}
-                className="flex-1 p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
-                placeholder="Geschäft, Restaurant, Ort..."
-              />
-              <button
-                type="button"
-                onClick={handleGetLocation}
-                disabled={isLocating}
-                className="px-3 py-2 bg-[#f7f7f5] border border-transparent hover:border-[#e9e9e7] rounded-md text-[#37352f] transition-colors flex items-center justify-center"
-                title="Aktuellen Standort (GPS) speichern"
-              >
-                <MapPin className="w-4 h-4" />
-              </button>
-            </div>
-            {wine.locationCoords ? (
-              <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
-                <Check className="w-3 h-3" /> GPS-Koordinaten gespeichert
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${wine.locationCoords.lat},${wine.locationCoords.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline ml-1"
-                >
-                  (Karte ansehen)
-                </a>
-              </p>
-            ) : wine.kaufort ? (
-              <p className="text-xs mt-1">
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(wine.kaufort)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-500 hover:underline flex items-center gap-1"
-                >
-                  <MapPin className="w-3 h-3" /> Auf Google Maps suchen
-                </a>
-              </p>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="space-y-1.5">
-          <label className="text-sm font-medium text-[#787774]">Besonderheiten (Bio, Vegan, etc.)</label>
-          <input
-            type="text"
-            value={wine.besonderheiten || ''}
-            onChange={e => setWine({ ...wine, besonderheiten: e.target.value })}
-            className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
-          />
+              <ScanText className="w-4 h-4" /> Etikett auslesen
+            </button>
+          )}
         </section>
 
         {/* Ratings */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-[#e9e9e7]">
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4 bg-[#f7f7f5] p-4 rounded-lg">
             <h3 className="font-semibold">Bewertung Kirsten</h3>
             <div className="space-y-1.5">
@@ -780,6 +570,299 @@ Mögliche Felder (alle optional):
             </div>
           </div>
         </section>
+
+        {/* Details: eingeklappt, damit das Eintragen schnell bleibt */}
+        <details
+          open={detailsOpen}
+          onToggle={e => setDetailsOpen((e.currentTarget as HTMLDetailsElement).open)}
+          className="group border-t border-[#e9e9e7] pt-4"
+        >
+          <summary className="flex items-center justify-between gap-2 cursor-pointer list-none select-none">
+            <span className="min-w-0">
+              <span className="block font-semibold">Details</span>
+              <span className="block text-xs text-[#787774] truncate">{detailsSummary || 'Farbe, Rebsorte, Herkunft, Geruch & Geschmack …'}</span>
+            </span>
+            <ChevronDown className="w-5 h-5 shrink-0 text-[#787774] transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="space-y-8 pt-6">
+          {/* Characteristics */}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#787774]">Farbe</label>
+              <select
+                value={wine.farbe || ''}
+                onChange={e => setWine({ ...wine, farbe: e.target.value })}
+                className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+              >
+                <option value="">Auswählen...</option>
+                {FARBEN.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#787774]">Geschmacksnote</label>
+              <select
+                value={wine.geschmacksnote || ''}
+                onChange={e => setWine({ ...wine, geschmacksnote: e.target.value })}
+                className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+              >
+                <option value="">Auswählen...</option>
+                {GESCHMACKSNOTEN.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+          </section>
+
+          {/* Tags */}
+          <section className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#787774]">Geruch</label>
+              <div className="flex flex-wrap gap-2">
+                {PREDEFINED_GERUCH.map(tag => {
+                  const isActive = wine.geruch?.includes(tag.term);
+                  return (
+                    <Tooltip key={tag.term} content={tag.description}>
+                      <button
+                        type="button"
+                        onClick={() => toggleTag('geruch', tag.term)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${isActive ? 'bg-[#37352f] text-white border-[#37352f]' : 'bg-white text-[#787774] border-[#e9e9e7] hover:bg-[#f7f7f5]'}`}
+                      >
+                        {tag.term}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
+                {wine.geruch?.filter(t => !PREDEFINED_GERUCH.some(pt => pt.term === t)).map(tag => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag('geruch', tag)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                    title="Eigenen Begriff entfernen"
+                  >
+                    {tag}
+                    <X className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="text"
+                  value={customGeruch}
+                  onChange={e => setCustomGeruch(e.target.value)}
+                  placeholder="Eigener Begriff..."
+                  className="flex-1 rounded-md border border-[#e9e9e7] px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#37352f]/20"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (customGeruch.trim()) {
+                        if (!wine.geruch?.includes(customGeruch.trim())) {
+                          setWine({ ...wine, geruch: [...(wine.geruch || []), customGeruch.trim()] });
+                        }
+                        setCustomGeruch('');
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customGeruch.trim()) {
+                      if (!wine.geruch?.includes(customGeruch.trim())) {
+                        setWine({ ...wine, geruch: [...(wine.geruch || []), customGeruch.trim()] });
+                      }
+                      setCustomGeruch('');
+                    }
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-[#f7f7f5] border border-[#e9e9e7] rounded-md text-sm font-medium hover:bg-[#e9e9e7] text-[#37352f] transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Hinzufügen
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#787774]">Geschmack</label>
+              <div className="flex flex-wrap gap-2">
+                {PREDEFINED_GESCHMACK.map(tag => {
+                  const isActive = wine.geschmack?.includes(tag.term);
+                  return (
+                    <Tooltip key={tag.term} content={tag.description}>
+                      <button
+                        type="button"
+                        onClick={() => toggleTag('geschmack', tag.term)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${isActive ? 'bg-[#37352f] text-white border-[#37352f]' : 'bg-white text-[#787774] border-[#e9e9e7] hover:bg-[#f7f7f5]'}`}
+                      >
+                        {tag.term}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
+                {wine.geschmack?.filter(t => !PREDEFINED_GESCHMACK.some(pt => pt.term === t)).map(tag => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag('geschmack', tag)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                    title="Eigenen Begriff entfernen"
+                  >
+                    {tag}
+                    <X className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="text"
+                  value={customGeschmack}
+                  onChange={e => setCustomGeschmack(e.target.value)}
+                  placeholder="Eigener Begriff..."
+                  className="flex-1 rounded-md border border-[#e9e9e7] px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#37352f]/20"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (customGeschmack.trim()) {
+                        if (!wine.geschmack?.includes(customGeschmack.trim())) {
+                          setWine({ ...wine, geschmack: [...(wine.geschmack || []), customGeschmack.trim()] });
+                        }
+                        setCustomGeschmack('');
+                      }
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customGeschmack.trim()) {
+                      if (!wine.geschmack?.includes(customGeschmack.trim())) {
+                        setWine({ ...wine, geschmack: [...(wine.geschmack || []), customGeschmack.trim()] });
+                      }
+                      setCustomGeschmack('');
+                    }
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-[#f7f7f5] border border-[#e9e9e7] rounded-md text-sm font-medium hover:bg-[#e9e9e7] text-[#37352f] transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Hinzufügen
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* Details */}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <RebsortenInput
+              label="Rebsorte(n)"
+              options={rebsorten}
+              value={getRebsorten(wine)}
+              onChange={(val) => setWine(prev => ({ ...prev, rebsorten: val, rebsorte: val.join(', ') || undefined }))}
+            />
+
+            <AutocompleteInput
+              label="Winzer"
+              options={winzerList}
+              value={wine.winzer || ''}
+              onValueChange={(val) => setWine({ ...wine, winzer: val })}
+            />
+
+            <AutocompleteInput
+              label="Land"
+              options={laender}
+              value={wine.land || ''}
+              onValueChange={(val) => setWine({ ...wine, land: val })}
+            />
+
+            <AutocompleteInput
+              label="Anbaugebiet"
+              options={anbaugebiete}
+              value={wine.anbaugebiet || ''}
+              onValueChange={(val) => setWine({ ...wine, anbaugebiet: val })}
+            />
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#787774]">Jahrgang</label>
+              <input
+                type="number"
+                value={wine.jahrgang || ''}
+                onChange={e => setWine({ ...wine, jahrgang: parseInt(e.target.value) || undefined })}
+                className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#787774]">Preis (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={wine.preis || ''}
+                onChange={e => setWine({ ...wine, preis: parseFloat(e.target.value) || undefined })}
+                className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+              />
+            </div>
+
+            <KaufdatumInput
+              value={wine.kaufdatum}
+              onChange={(val) => setWine(prev => ({ ...prev, kaufdatum: val }))}
+            />
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[#787774]">Kauf- / Genussort</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={wine.kaufort || ''}
+                  onChange={e => setWine({ ...wine, kaufort: e.target.value })}
+                  className="flex-1 p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+                  placeholder="Geschäft, Restaurant, Ort..."
+                />
+                <button
+                  type="button"
+                  onClick={handleGetLocation}
+                  disabled={isLocating}
+                  className="px-3 py-2 bg-[#f7f7f5] border border-transparent hover:border-[#e9e9e7] rounded-md text-[#37352f] transition-colors flex items-center justify-center"
+                  title="Aktuellen Standort (GPS) speichern"
+                >
+                  <MapPin className="w-4 h-4" />
+                </button>
+              </div>
+              {wine.locationCoords ? (
+                <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
+                  <Check className="w-3 h-3" /> GPS-Koordinaten gespeichert
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${wine.locationCoords.lat},${wine.locationCoords.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline ml-1"
+                  >
+                    (Karte ansehen)
+                  </a>
+                </p>
+              ) : wine.kaufort ? (
+                <p className="text-xs mt-1">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(wine.kaufort)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline flex items-center gap-1"
+                  >
+                    <MapPin className="w-3 h-3" /> Auf Google Maps suchen
+                  </a>
+                </p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="space-y-1.5">
+            <label className="text-sm font-medium text-[#787774]">Besonderheiten (Bio, Vegan, etc.)</label>
+            <input
+              type="text"
+              value={wine.besonderheiten || ''}
+              onChange={e => setWine({ ...wine, besonderheiten: e.target.value })}
+              className="w-full p-2 bg-[#f7f7f5] border border-transparent focus:border-[#e9e9e7] focus:bg-white rounded-md text-sm outline-none"
+            />
+          </section>
+          </div>
+        </details>
 
         {id && (
           <div className="pt-8 flex justify-end">
